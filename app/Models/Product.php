@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Product extends Model
 {
 
+    protected $table = 'products';
     /**
      * The attributes that are mass assignable.
      *
@@ -14,5 +15,11 @@ class Product extends Model
      */
     protected $fillable = [
         'name',
+        'description'
     ];
+
+    public function tags()
+    {
+        return $this->belongsToMany(Tag::class, 'product_tags');
+    }
 }

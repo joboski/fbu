@@ -17,14 +17,20 @@
 
 <h1>Current Products</h1>
 
+@if (session()->has('status'))
+    <div class="alert-success">
+        {{ session()->get('status') }}
+    </div>
+@endif
+
 @if (\App\Models\Product::all()->count())
     <ul>
         @foreach (\App\Models\Product::all() as $product)
             <li>
                 {!! $product->name !!}
-                <form action="/products/delete" method="POST">
+                <form action="{{ route('product.delete', $product->id }}" method="POST">
                     @csrf
-                    <input type="hidden" name="id" value="@php(print $product->id)"/>
+                    @method('DELETE')
                     <button type="submit">delete</button>
                 </form>
             </li>
@@ -35,12 +41,6 @@
 @endif
 
 
-
-@if (session('status'))
-    <div class="alert-success">
-        {{ session('status') }}
-    </div>
-@endif
 
 <hr />
 
