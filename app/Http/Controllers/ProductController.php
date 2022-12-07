@@ -2,40 +2,43 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ProductFormRequest;
+use App\Models\Product;
+use App\Models\Tag;
 use Illuminate\Http\Request;
-use app\Models\Product;
-use app\Models\Tag;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
     public function index()
     {
-        return view('products');
-    }
-
-    public function new(Request $request)
-    {
-        $validator = $request->validate([
-            'name' => 'bail|required|unique:products|max:64',
-            'description' => 'required'
-        ]);
-
-        if ($validator->fails()) {
-
-            return redirect('products/new')
-                ->withErrors($validator)
-                ->withInputs();
+        $products = Product::all();
+        $productTags = [];
+        foreach ($products as $product) {
+            $tags = $product->tags;
+            foreach ($tags as $tag) {
+                $productTags[$tag->name][] = $product;
+            }
         }
 
-        $validated = $validator->validated();
+        return view('index')->with('items', $productTags);
+    }
 
-        Product::insert([
-            'name' => $validated['name'],
-            'description' => $validated['description']
+    public function create()
+    {
+        return view('form')->with([
+            'formRequest' => new ProductFormRequest
         ]);
+    }
 
-        if ($validated['tags']) {
-            $this->saveTags($validated['tags']);
+    public function new(ProductFormRequest $request)
+    {
+        $product = new Product();
+        $product->name = $request->get('name');
+        $product->description = $request->get('description');
+
+        if ($product->save() && $request->get('tags')) {
+            $this->saveTags($request->get('tags'), $product);
         }
         
         return redirect('/products')->with('status', 'The product was saved');
@@ -43,27 +46,59 @@ class ProductController extends Controller
 
     public function delete($id)
     {
-        $isExistingProduct = Product::find($id);
+        $product = Product::find($id);
         
-        if (!$isExistingProduct) {
+        if (!$product) {
             return redirect('products/')
                 ->withErrors('Product does not exists.');
         }
+
+        // remove from pivot first
+        $product->tags()->wherePivot('product_id', '=', $id)->detach();
 
         Product::destroy($id);
 
         return redirect('/products')->with('status', 'The product was deleted');
     }
 
-    private function saveTags($tags)
+    private function saveTags($tags, $product)
     {
-        $storedTags = Tag::all();
-        $arrTags = explode(',', $tags);
+        $tagObject = new Tag();
+        $inputtedTags = explode(',', $tags);
+        $storedTags = $tagObject->pluck('name')->toArray();
+        $tagIds = [];
 
-        foreach ($arrTags as $tag) {
+        foreach ($inputtedTags as $tag) {
             if (!in_array($tag, $storedTags)) {
-                Tag::insert(['name' => $tag]);
+                $tagObject->name = trim($tag);
+                $tagObject->save();
+                $tagIds[] = $tagObject->id;
+            } else {
+                $tag = $this->findBy($tagObject, 'name', $tag);
+                $tagIds[] = $tag->id;
             }
         }
+
+        $product->tags()->sync($tagIds);
+    }
+
+    private function findBy($model, $attribute, $value)
+    {
+        return $this
+            ->getBaseQueryForSearch($model, $attribute, $value)
+            ->first();
+    }
+
+    private function getBaseQueryForSearch($model, $attribute, $value, $operation = '=', $existingQuery = null)
+    {
+        $query = (! empty($existingQuery)) ? $existingQuery : $model->newQuery();
+        if (is_array($value)) {
+            if ($operation === '!=') {
+                return $query->whereNotIn($attribute, $value);
+            }
+            return $query->whereIn($attribute, $value);
+        }
+
+        return $query->where($attribute, $operation, $value);
     }
 }
